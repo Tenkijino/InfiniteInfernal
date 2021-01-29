@@ -8,6 +8,7 @@ import cat.nyaa.infiniteinfernal.loot.ILootItem;
 import cat.nyaa.infiniteinfernal.utils.ticker.TickEvent;
 import cat.nyaa.infiniteinfernal.utils.ticker.TickTask;
 import cat.nyaa.infiniteinfernal.utils.ticker.Ticker;
+import cat.nyaa.nyaacore.utils.HexColorUtils;
 import cat.nyaa.nyaacore.utils.NmsUtils;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
@@ -213,20 +214,18 @@ public class TargetDummy implements IMob {
 
     private void tick(int ticked) {
         refreshHealth();
-        if(lastUpdatedCounter == null || !lastUpdatedCounter.isActive()){
+        if(lastUpdatedCounter == null){
             return;
         }
-        refreshBossBar();
         if (ticked%10 == 0){
             refreshTitle();
         }
+        refreshBossBar();
     }
 
     private void refreshTitle() {
         if (lastUpdatedCounter != null) {
-            if (lastUpdatedCounter.isActive()) {
-                lastUpdatedCounter.updateTitle();
-            }
+            lastUpdatedCounter.updateTitle();
         }
     }
 
@@ -316,7 +315,7 @@ public class TargetDummy implements IMob {
             dpsTitle = dpsTitle.replaceAll("\\{dps}", String.format("%.2f",dps));
             dpsTitle = dpsTitle.replaceAll("\\{total}", String.format("%.2f",total));
             dpsTitle = dpsTitle.replaceAll("\\{max}", String.format("%.2f", maxDps));
-            bossBar.setTitle(ChatColor.translateAlternateColorCodes('&', dpsTitle));
+            bossBar.setTitle(HexColorUtils.hexColored( dpsTitle));
         }
 
         private void updateBossbar() {
@@ -463,7 +462,7 @@ public class TargetDummy implements IMob {
         if (config.nbtTags != null && !config.nbtTags.equals("")) {
             NmsUtils.setEntityTag(entity, config.nbtTags);
         }
-        entity.setCustomName(ChatColor.translateAlternateColorCodes('&',getTaggedName()));
+        entity.setCustomName(HexColorUtils.hexColored(getTaggedName()));
         entity.setCustomNameVisible(true);
         InfPlugin.plugin.config().tags.forEach(entity::addScoreboardTag);
         if (!InfPlugin.plugin.config().dpsTag.equals("")) {

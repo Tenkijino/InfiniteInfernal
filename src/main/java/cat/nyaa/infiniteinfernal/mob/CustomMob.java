@@ -15,6 +15,7 @@ import cat.nyaa.infiniteinfernal.event.InfernalSpawnEvent;
 import cat.nyaa.infiniteinfernal.loot.ILootItem;
 import cat.nyaa.infiniteinfernal.loot.LootManager;
 import cat.nyaa.infiniteinfernal.utils.Utils;
+import cat.nyaa.nyaacore.utils.HexColorUtils;
 import cat.nyaa.nyaacore.utils.NmsUtils;
 import com.udojava.evalex.Expression;
 import org.bukkit.*;
@@ -255,7 +256,7 @@ public class CustomMob implements IMob {
 
     @Override
     public String getTaggedName() {
-        return ChatColor.translateAlternateColorCodes('&', taggedName);
+        return HexColorUtils.hexColored( taggedName);
     }
 
     @Override
@@ -263,7 +264,8 @@ public class CustomMob implements IMob {
         LivingEntity entity = getEntity();
         World world = entity.getWorld();
         Location location = entity.getLocation();
-        world.spawnParticle(Particle.LAVA, location, 10, 0, 0, 0, 1, null, true);
+        Particle mobParticle = InfPlugin.plugin.config().mobParticle;
+        world.spawnParticle(mobParticle, location, 10, 0, 0, 0, 1, null, true);
     }
 
     @Override
