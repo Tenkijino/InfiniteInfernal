@@ -1,17 +1,24 @@
 package cat.nyaa.infiniteinfernal.controler;
 
+import cat.nyaa.infiniteinfernal.Config;
 import cat.nyaa.infiniteinfernal.InfPlugin;
+import cat.nyaa.infiniteinfernal.configs.MobConfig;
 import cat.nyaa.infiniteinfernal.configs.RegionConfig;
 import cat.nyaa.infiniteinfernal.configs.WorldConfig;
 import cat.nyaa.infiniteinfernal.mob.IMob;
 import cat.nyaa.infiniteinfernal.mob.MobManager;
 import cat.nyaa.infiniteinfernal.utils.Context;
 import cat.nyaa.infiniteinfernal.utils.Utils;
+import cat.nyaa.infiniteinfernal.utils.WeightedPair;
 import cat.nyaa.infiniteinfernal.utils.support.WorldGuardUtils;
+import cat.nyaa.nyaacore.Pair;
 import org.bukkit.GameMode;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Biome;
+import org.bukkit.block.Block;
+import org.bukkit.entity.EntityType;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.event.entity.CreatureSpawnEvent;
@@ -21,6 +28,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Function;
+import java.util.function.Predicate;
 
 public class InfSpawnControler implements ISpawnControler {
     private final InfPlugin plugin;
@@ -136,33 +145,154 @@ public class InfSpawnControler implements ISpawnControler {
 
     @Override
     public IMob spawnIMob(Player player, boolean force) {
-        World world = player.getWorld();
-        Location location = player.getLocation();
+        MobManager mobManager = MobManager.instance();
+        Location center = player.getLocation();
+        Config config = InfPlugin.plugin.config();
+        List<RegionConfig> regions = config.getRegionsForLocation(center);
+
+        Function<Location, IMob> mobSupplier = null;
+        Function<MobConfig, Location> locationSupplier = (mobConfig) -> findLocationByConfig(player, mobConfig, center, force);
+        MobConfig mobConfig = null;
+
+        if (!canSpawnNearPlayer(player, center) && !force) {
+            return null;
+        }
+
+        if (!regions.isEmpty()) {
+            WeightedPair<MobConfig, Integer> pair = mobManager.selectConfigInRegion(regions, center);
+            if (pair == null || pair.getKey() == null){
+                return null;
+            }
+            mobConfig = pair.getKey();
+            final Integer level = pair.getValue();
+            MobConfig finalMobConfig = mobConfig;
+            mobSupplier = (location) -> mobManager.spawnMobByConfig(finalMobConfig, location, level);
+        }
+
+        if (mobSupplier == null){
+            Pair<MobConfig, Integer> pair = mobManager.selectNatualMobConfig(center);
+            if (pair == null || pair.getKey() == null){
+                return null;
+            }
+            mobConfig = pair.getKey();
+            final Integer level = pair.getValue();
+            MobConfig finalMobConfig = mobConfig;
+            mobSupplier = (location) -> mobManager.spawnMobByConfig(finalMobConfig, location, level);
+        }
+
+        Location location = locationSupplier.apply(mobConfig);
+        int retryTimes = 30;
+        for (int i = 0; i < retryTimes; i++) {
+            if (location != null){
+                break;
+            }
+            location = locationSupplier.apply(mobConfig);
+        }
+        if (location == null){
+            return null;
+        }
+        return mobSupplier.apply(location);
+    }
+
+    private Location findLocationByConfig(Player player, MobConfig mobConfig, Location center, boolean force) {
+        World world = center.getWorld();
+        Location spawnLocation = null;
+        final EntityType type = mobConfig.type;
+        if (MobManager.FluidLocationWrapper.isSkyMob(type)){
+            spawnLocation = findLocation(world, center, Material::isAir);
+        }else if (MobManager.FluidLocationWrapper.isWaterMob(type)){
+            spawnLocation = findLocation(world, center, material -> material.equals(Material.WATER));
+        }else {
+            spawnLocation = findFloorLocation(world, center);
+        }
+
+        if (spawnLocation == null)return null;
+        if (recheckLocation(spawnLocation, mobConfig, force, player)){
+            centerSpawnLocation(spawnLocation);
+            return spawnLocation;
+        }else return null;
+    }
+
+    private Location findLocation(World world, Location center, Predicate<Material> air) {
         int maxSpawnDistance = getMaxSpawnDistance(world);
         int minSpawnDistance = getMinSpawnDistance(world);
         Location spawnLocation;
         if (Utils.possibility(0.7)){
-            spawnLocation = Utils.randomSpawnLocationInFront(location, minSpawnDistance, maxSpawnDistance);
+            spawnLocation = Utils.randomSpawnLocationInFront(center, minSpawnDistance, maxSpawnDistance, (location -> air.test(location.getBlock().getType())));
         }else {
-            spawnLocation = Utils.randomSpawnLocation(location, minSpawnDistance, maxSpawnDistance);
+            spawnLocation = Utils.randomSpawnLocation(center, minSpawnDistance, maxSpawnDistance, (location -> air.test(location.getBlock().getType())));
         }
-        if (spawnLocation== null)return null;
-        if (canSpawn(world,spawnLocation) || force) {
+        return spawnLocation;
+    }
+
+    private Location findFloorLocation(World world, Location location) {
+        int maxSpawnDistance = getMaxSpawnDistance(world);
+        int minSpawnDistance = getMinSpawnDistance(world);
+        Location spawnLocation;
+        if (Utils.possibility(0.7)){
+            spawnLocation = Utils.randomFloorSpawnLocationInFront(location, minSpawnDistance, maxSpawnDistance);
+        }else {
+            spawnLocation = Utils.randomFloorSpawnLocation(location, minSpawnDistance, maxSpawnDistance);
+        }
+        return spawnLocation;
+    }
+
+    private boolean recheckLocation(Location location, MobConfig mobConfig, boolean force, Player player) {
+        if (location == null || mobConfig == null || location.getWorld() == null) {
+            return false;
+        }
+        World world = location.getWorld();
+        if (canSpawn(world,location) || force) {
+//            Biome biome = location.getBlock().getBiome();
+//            if (!isValidBiome(mobConfig, world, biome)){
+//                return false;
+//            }
             if (!force && InfPlugin.wgEnabled){
-                if (WorldGuardUtils.instance().isProtectedRegion(spawnLocation, player)) {
-                    return null;
+                if (WorldGuardUtils.instance().isProtectedRegion(location, player)) {
+                    return false;
                 }
             }
-            centerSpawnLocation(spawnLocation);
-            IMob iMob = MobManager.instance().natualSpawn(spawnLocation);
-            if (iMob != null) {
-                if (iMob.isDynamicHealth()) {
-                    iMob.tweakHealth();
-                }
-                iMob.autoRetarget();
+            centerSpawnLocation(location);
+            if (!lightValid(location)){
+                return false;
             }
-            return iMob;
-        } else return null;
+
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    private boolean isValidBiome(MobConfig mobConfig, World world, Biome biome) {
+        List<String> biomes = mobConfig.spawn.biomes;
+        List<String> worlds = mobConfig.spawn.worlds;
+        return biomes != null && worlds != null
+                && worlds.contains(world.getName()) && biomes.contains(biome.name());
+    }
+
+    private boolean lightValid(Location spawnLocation) {
+        final Block block = spawnLocation.getBlock();
+        final byte lightLevel = block.getLightLevel();
+        final byte lightFromBlocks = block.getLightFromBlocks();
+        final byte lightFromSky = block.getLightFromSky();
+        final WorldConfig worldConfig = InfPlugin.plugin.config().worlds.get(block.getWorld().getName());
+        if (worldConfig == null) {
+            return false;
+        }
+        final int worldMinSkyLight = worldConfig.minSkyLight;
+        final int worldMaxSkyLight = worldConfig.maxSkyLight;
+        final int worldMinBlockLight = worldConfig.minBlockLight;
+        final int worldMaxBlockLight = worldConfig.maxBlockLight;
+        final int worldMinLight = worldConfig.minLight;
+        final int worldMaxLight = worldConfig.maxLight;
+
+        return isInRange(lightLevel, worldMinLight, worldMaxLight)
+                || isInRange(lightFromBlocks, worldMinBlockLight, worldMaxBlockLight)
+                || isInRange(lightFromSky, worldMinSkyLight, worldMaxSkyLight);
+    }
+
+    private boolean isInRange(byte lightLevel, int worldMinLight, int worldMaxLight) {
+        return lightLevel >= worldMinLight && lightLevel <= worldMaxLight;
     }
 
     private void centerSpawnLocation(Location spawnLocation) {

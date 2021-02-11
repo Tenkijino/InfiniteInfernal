@@ -21,6 +21,7 @@ import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.Vector;
 
 import java.util.*;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -127,7 +128,33 @@ public class Utils {
                 .map(entity -> ((LivingEntity) entity));
     }
 
-    public static Location randomSpawnLocationInFront(Location location, int minSpawnDistance, int maxSpawnDistance) {
+    public static Location randomSpawnLocationInFront(Location location, int minSpawnDistance, int maxSpawnDistance, Predicate<Location> predicate) {
+        Vector direction = location.getDirection().clone();
+        direction.setY(0);
+        if (direction.length() > 1e-4) {
+            direction = cone(direction, 30);
+            for (int i = 0; i < 20; i++) {
+                Location targetLocation = location.clone().add(direction.normalize().multiply(random(minSpawnDistance, maxSpawnDistance)));
+                if (predicate.test(targetLocation)){
+                    return targetLocation;
+                }
+            }
+        }
+        return randomSpawnLocation(location, minSpawnDistance, maxSpawnDistance, predicate);
+    }
+
+    public static Location randomSpawnLocation(Location center, double innerRange, double outerRange, Predicate<Location> predicate) {
+        Location targetLocation = center;
+        for (int i = 0; i < 20; i++) {
+            targetLocation = randomLocation(center, innerRange, outerRange);
+            if (predicate.test(targetLocation)){
+                return targetLocation;
+            }
+        }
+        return null;
+    }
+
+    public static Location randomFloorSpawnLocationInFront(Location location, int minSpawnDistance, int maxSpawnDistance) {
         Vector direction = location.getDirection().clone();
         direction.setY(0);
         if (direction.length() > 1e-4) {
@@ -138,10 +165,10 @@ public class Utils {
                 if (validSpawnLocationInY != null) return validSpawnLocationInY;
             }
         }
-        return randomSpawnLocation(location, minSpawnDistance, maxSpawnDistance);
+        return randomFloorSpawnLocation(location, minSpawnDistance, maxSpawnDistance);
     }
 
-    public static Location randomSpawnLocation(Location center, double innerRange, double outerRange) {
+    public static Location randomFloorSpawnLocation(Location center, double innerRange, double outerRange) {
         Location targetLocation = center;
         for (int i = 0; i < 20; i++) {
             targetLocation = randomLocation(center, innerRange, outerRange);
